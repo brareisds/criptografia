@@ -1,5 +1,15 @@
-#include "aes.h"
+/**
+ * AES Implementation with Custom S-Box
+ * =====================================
+ * 
+ * Este programa implementa o algoritmo AES (Advanced Encryption Standard) com
+ * uma modificação: a substituição da Caixa-S (S-Box) original por outra cifra
+ * de substituição. A implementação das outras funções foi baseada no código da biblioteca
+ * OpenSSL (https://github.com/openssl/openssl/blob/master/crypto/aes/aes_core.c).
+ *
+ */
 
+#include "aes.h"
 
 static void XtimeWord(u32 *w)
 {
@@ -118,6 +128,8 @@ static void SubWord(u32 *w)
     *w = x;
 }
 
+/* ------------------------------------------------------------------------------------------
+* Funcao que implementa a caixa S e que deve ser alterada junto com sua inversa */
 static void SubLong(u64 *w)
 {
     u64 x, y, a1, a2, a3, a4, a5, a6;
@@ -307,6 +319,9 @@ static void InvSubLong(u64 *w)
     *w = x;
 }
 
+
+// --------------------------------------------------------------------------------------------------
+
 static void ShiftRows(u64 *state)
 {
     unsigned char s[4];
@@ -415,6 +430,7 @@ static void AddRoundKey(u64 *state, const u64 *w)
     state[1] ^= w[1];
 }
 
+// Alterar a chamada da funcao SubLong
 static void Cipher(const unsigned char *in, unsigned char *out,
                    const u64 *w, int nr)
 {
@@ -441,6 +457,8 @@ static void Cipher(const unsigned char *in, unsigned char *out,
     memcpy(out, state, 16);
 }
 
+
+// Alterar a chamada da funcao SubLong
 static void InvCipher(const unsigned char *in, unsigned char *out,
                       const u64 *w, int nr)
 
