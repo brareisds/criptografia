@@ -10,6 +10,7 @@
  */
 
 #include "aes.h"
+#define PRNG_SEED 0x12345678ABCDEF  // Defina uma semente fixa
 
 static void XtimeWord(u32 *w)
 {
@@ -128,8 +129,34 @@ static void SubWord(u32 *w)
     *w = x;
 }
 
+
+
+
+static unsigned char PRNG(u64 seed, int offset) {
+    seed ^= seed >> (21 + offset);
+    seed *= 0x2545F4914F6CDD1D;  // Constante de mistura para boa dispersão
+    return (unsigned char)((seed >> (offset % 8)) & 0xFF);  // Máscara para limitar a 8 bits
+}
+
+static void SubLong(u64 *w, const CUSTOM_AES_KEY *key) {
+    u64 random = PRNG(key->seed, 0);  // Gere o valor pseudoaleatório uma vez
+    *w ^= random;                    // XOR diretamente no `u64`
+    *w = (*w + random) & 0xFFFFFFFFFFFFFFFF;  // Adição modular em 64 bits
+}
+
+static void InvSubLong(u64 *w, const CUSTOM_AES_KEY *key) {
+    u64 random = PRNG(key->seed, 0);  // Gere o valor pseudoaleatório uma vez
+    *w = (*w - random) & 0xFFFFFFFFFFFFFFFF;  // Subtração modular em 64 bits
+    *w ^= random;                    // Reverte XOR
+}
+
+
+
+
+
+
 /* ------------------------------------------------------------------------------------------
-* Funcao que implementa a caixa S e que deve ser alterada junto com sua inversa */
+* Funcao que implementa a caixa S e que deve ser alterada junto com sua inversa 
 static void SubLong(u64 *w)
 {
     u64 x, y, a1, a2, a3, a4, a5, a6;
@@ -221,9 +248,9 @@ static void SubLong(u64 *w)
     *w = x;
 }
 
-/*
+
  * This computes w := (S^-1 * (w + c))^-1
- */
+ 
 static void InvSubLong(u64 *w)
 {
     u64 x, y, a1, a2, a3, a4, a5, a6;
@@ -317,7 +344,7 @@ static void InvSubLong(u64 *w)
     y = ((y & U64(0xFEFEFEFEFEFEFEFE)) >> 1) | ((y & U64(0x0101010101010101)) << 7);
     x ^= y & U64(0x7D7D7D7D7D7D7D7D);
     *w = x;
-}
+}*/
 
 
 // --------------------------------------------------------------------------------------------------
@@ -430,8 +457,60 @@ static void AddRoundKey(u64 *state, const u64 *w)
     state[1] ^= w[1];
 }
 
+
+static void Cipher(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+    u64 state[2];
+    int i;
+
+    memcpy(state, in, 16);
+
+    AddRoundKey(state, key->rd_key);
+
+    for (i = 1; i < key->rounds; i++) {
+        SubLong(&state[0], key);
+        SubLong(&state[1], key);
+        ShiftRows(state);
+        MixColumns(state);
+        AddRoundKey(state, key->rd_key + i * 2);
+    }
+
+    SubLong(&state[0], key);
+    SubLong(&state[1], key);
+    ShiftRows(state);
+    AddRoundKey(state, key->rd_key + key->rounds * 2);
+
+    memcpy(out, state, 16);
+}
+
+static void InvCipher(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+    u64 state[2];
+    int i;
+
+    memcpy(state, in, 16);
+
+    AddRoundKey(state, key->rd_key + key->rounds * 2);
+
+    for (i = key->rounds - 1; i > 0; i--) {
+        InvShiftRows(state);
+        InvSubLong(&state[0], key);
+        InvSubLong(&state[1], key);
+        AddRoundKey(state, key->rd_key + i * 2);
+        InvMixColumns(state);
+    }
+
+    InvShiftRows(state);
+    InvSubLong(&state[0], key);
+    InvSubLong(&state[1], key);
+    AddRoundKey(state, key->rd_key);
+
+    memcpy(out, state, 16);
+}
+
+
+
+
 // Alterar a chamada da funcao SubLong
-static void Cipher(const unsigned char *in, unsigned char *out,
+/*static void Cipher(const unsigned char *in, unsigned char *out,
                    const u64 *w, int nr)
 {
     u64 state[2];
@@ -484,7 +563,7 @@ static void InvCipher(const unsigned char *in, unsigned char *out,
     AddRoundKey(state, w);
 
     memcpy(out, state, 16);
-}
+}*/
 
 static void RotWord(u32 *x)
 {
@@ -529,7 +608,16 @@ static void KeyExpansion(const unsigned char *key, u64 *w,
 }
 
 
-int AES_set_encrypt_key(const unsigned char *userKey, const int bits, AES_KEY *key) {
+u64 derive_seed(const unsigned char *userKey, size_t key_len) {
+    u64 seed = 0;
+    for (size_t i = 0; i < key_len; i++) {
+        seed = (seed << 8) | userKey[i];  // Combina os bytes da chave
+    }
+    return seed;
+}
+
+
+int CUSTOM_AES_set_encrypt_key(const unsigned char *userKey, const int bits, CUSTOM_AES_KEY *key) {
     if (!userKey || !key)
         return -1;
     if (bits != 128 && bits != 192 && bits != 256)
@@ -537,27 +625,25 @@ int AES_set_encrypt_key(const unsigned char *userKey, const int bits, AES_KEY *k
 
     key->rounds = (bits == 128) ? 10 : (bits == 192) ? 12 : 14;
     KeyExpansion(userKey, key->rd_key, key->rounds, bits / 32);
+
+    // Derivar a seed a partir da chave do usuário
+    key->seed = derive_seed(userKey, bits / 8);  // bits / 8 = comprimento da chave em bytes
     return 0;
 }
 
 
-/**
- * Expand the cipher key into the decryption key schedule.
- */
-int AES_set_decrypt_key(const unsigned char *userKey, const int bits,
-                        AES_KEY *key)
-{
-    return AES_set_encrypt_key(userKey, bits, key);
+int CUSTOM_AES_set_decrypt_key(const unsigned char *userKey, const int bits, CUSTOM_AES_KEY *key) {
+    return CUSTOM_AES_set_encrypt_key(userKey, bits, key);
 }
 
 /*
  * Encrypt a single block
  * in and out can overlap
  */
-void AES_encrypt(const unsigned char *in, unsigned char *out, const AES_KEY *key) {
-    Cipher(in, out, key->rd_key, key->rounds);
+void CUSTOM_AES_encrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+    Cipher(in, out, key);
 }
 
-void AES_decrypt(const unsigned char *in, unsigned char *out, const AES_KEY *key) {
-    InvCipher(in, out, key->rd_key, key->rounds);
+void CUSTOM_AES_decrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+    InvCipher(in, out, key);
 }

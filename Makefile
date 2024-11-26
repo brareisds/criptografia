@@ -1,29 +1,14 @@
-# Nome do executável
-TARGET = aes
+CFLAGS = -Wall -Wextra
+LDFLAGS = -lssl -lcrypto
 
-# Compilador
-CC = gcc
+aes: aes.o main.o
+	gcc $(CFLAGS) -o aes aes.o main.o $(LDFLAGS)
 
-# Flags do compilador
-CFLAGS = -Wall -Wextra -Werror
+aes.o: aes.c aes.h
+	gcc $(CFLAGS) -c aes.c -o aes.o
 
-# Arquivos fonte
-SRCS = aes.c main.c
+main.o: main.c aes.h
+	gcc $(CFLAGS) -c main.c -o main.o
 
-# Arquivos objeto
-OBJS = $(SRCS:.c=.o)
-
-# Regra padrão
-all: $(TARGET)
-
-# Regra para criar o executável
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
-
-# Regra para criar os arquivos objeto
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# Limpeza dos arquivos objeto e do executável
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f *.o aes
