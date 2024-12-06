@@ -43,9 +43,6 @@ Execute novamente o script **Python** para testar o desempenho da implementaçã
 ```bash
 python3 testes.py
 ```
-
-````
-
 ---
 
 ## Descrição do Projeto
@@ -83,7 +80,7 @@ Essas alterações são projetadas para explorar novos conceitos de criptografia
   ```c
   seed ^= seed >> (offset + 3);
   seed *= 6364136223846793005ULL;
-````
+
 
 #### 3. **Transformações Personalizadas**
 
