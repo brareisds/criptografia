@@ -25,12 +25,12 @@ make
    - Após gerar os arquivos de teste, é possível executar a criptografia e descriptografia em qualquer arquivo individualmente:
 
      ```bash
-     ./aes <caminho_do_arquivo_de_teste> <caminho_do_arquivo_de_saida> <chave_de_teste>
+     ./aes <caminho_do_arquivo_de_teste> <chave_de_teste>
      ```
 
    - Exemplo:
      ```bash
-     ./aes test_files/test_1000KB.txt test_files/output.txt mytestkey1234567
+     ./aes test_files/test_1000KB.txt mytestkey1234567
      ```
 
 3. **Sobre os Arquivos de Teste:**
