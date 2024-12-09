@@ -140,7 +140,7 @@ static unsigned char PRNG(u64 seed, int offset) {
 
 
 static void SubLong(u64 *w, const CUSTOM_AES_KEY *key) {
-    u64 random = PRNG(key->seed, 0);  // Gere o valor pseudoaleatório uma vez usando a seed derivada da chave
+    u64 random = PRNG(key->seed, 0);  // Gera o valor pseudoaleatório uma vez usando a seed derivada da chave
     *w ^= random;                    // XOR diretamente em `u64`
     *w = (*w + random) & 0xFFFFFFFFFFFFFFFF;  // Adição modular em 64 bits
 }
