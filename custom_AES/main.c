@@ -1,16 +1,17 @@
 
 #include "aes.h"
-#include <openssl/evp.h>
+#include <openssl/aes.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <omp.h>
 #include <openssl/rand.h>
+#include <unistd.h> // Para ftruncate
 
-#define BLOCK_SIZE (128 * 1024)
+#define BLOCK_SIZE 16
 
-void openssl_encrypt(const unsigned char *input, unsigned char *output, const unsigned char *key) {
+/*void openssl_encrypt(const unsigned char *input, unsigned char *output, const unsigned char *key) {
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     int len;
     EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, key, NULL);
@@ -30,7 +31,7 @@ void openssl_decrypt(const unsigned char *input, unsigned char *output, const un
     EVP_DecryptUpdate(ctx, output, &len, input, 16);
     EVP_DecryptFinal_ex(ctx, output + len, &len);
     EVP_CIPHER_CTX_free(ctx);
-}
+}*/
 
 void compare_file_bytes(const char *file1, const char *file2, size_t n) {
     FILE *f1 = fopen(file1, "rb");
@@ -45,6 +46,26 @@ void compare_file_bytes(const char *file1, const char *file2, size_t n) {
             printf("Byte %zu: %02x != %02x\n", i, b1[i], b2[i]);
         }
     }
+}
+
+// Função para criptografar usando AES
+void aes_encrypt(const unsigned char *input, unsigned char *output, const unsigned char *key) {
+    AES_KEY aes_key;
+    if (AES_set_encrypt_key(key, 128, &aes_key) < 0) {
+        fprintf(stderr, "Erro ao configurar a chave de criptografia.\n");
+        exit(1);
+    }
+    AES_encrypt(input, output, &aes_key);
+}
+
+// Função para descriptografar usando AES
+void aes_decrypt(const unsigned char *input, unsigned char *output, const unsigned char *key) {
+    AES_KEY aes_key;
+    if (AES_set_decrypt_key(key, 128, &aes_key) < 0) {
+        fprintf(stderr, "Erro ao configurar a chave de descriptografia.\n");
+        exit(1);
+    }
+    AES_decrypt(input, output, &aes_key);
 }
 
 
@@ -174,14 +195,24 @@ int main(int argc, char *argv[]) {
         }
         fseek(input_file, 0, SEEK_SET);
         clock_t start = clock();
+        unsigned char resto;
         while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
-            size_t blocks = (bytes_read + 15) / 16;
-            #pragma omp parallel for
-            for (size_t i = 0; i < blocks; i++) {
-                CUSTOM_AES_encrypt(buffer_in + (i * 16), buffer_out + (i * 16), &custom_aesKey);
+            //size_t blocks = (bytes_read) / 16;
+            
+            // Verifica tamanho do bloco, precisa ser múltiplo de 16
+            if (bytes_read < BLOCK_SIZE){
+                // Verifica quanto falta para 16
+                resto = (unsigned char)(BLOCK_SIZE - bytes_read);
+                memset(buffer_in + bytes_read, 0, resto);
             }
+
+            CUSTOM_AES_encrypt(buffer_in, buffer_out, &custom_aesKey);
             fwrite(buffer_out, 1, bytes_read, encrypted_file);
         }
+        // Adiciona último bloco
+        memset(buffer_out, 0, BLOCK_SIZE);
+        buffer_out[0] = resto;
+
         clock_t end = clock();
         custom_encrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
         fclose(encrypted_file);
@@ -192,18 +223,27 @@ int main(int argc, char *argv[]) {
         fseek(input_file, 0, SEEK_SET);
         start = clock();
         while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
-            size_t blocks = (bytes_read + 15) / 16;
-            for (size_t i = 0; i < blocks; i++) {
-                openssl_encrypt(buffer_in + (i * 16), buffer_out + (i * 16), key);
+            //size_t blocks = (bytes_read) / 16;
+            //for (size_t i = 0; i < blocks; i++) {
+            if (bytes_read < BLOCK_SIZE){
+                resto = (unsigned char)(BLOCK_SIZE - bytes_read);
+                memset(buffer_in + bytes_read, 0, resto);   
             }
+            aes_encrypt(buffer_in, buffer_out, key);
+           // }
             fwrite(buffer_out, 1, bytes_read, openssl_file);
         }
+        // Adiciona último bloco
+        memset(buffer_out, 0, BLOCK_SIZE);
+        buffer_out[0] = resto;
+
         end = clock();
         openssl_encrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
         fclose(openssl_file);
     }
 
     if (do_decrypt) {
+        unsigned char resto;
         FILE *encrypted_file = fopen("encrypted_file.aes", "rb");
         FILE *decrypted_file = fopen("decrypted_file.txt", "wb");
         if (!encrypted_file || !decrypted_file) {
@@ -217,19 +257,38 @@ int main(int argc, char *argv[]) {
         }
         clock_t start = clock();
         while ((bytes_read = fread(buffer_out, 1, BLOCK_SIZE, encrypted_file)) > 0) {
-            size_t blocks = (bytes_read + 15) / 16;
-            #pragma omp parallel for
-            for (size_t i = 0; i < blocks; i++) {
-                CUSTOM_AES_decrypt(buffer_out + (i * 16), buffer_decrypted + (i * 16), &custom_aesKey);
+            
+            
+            CUSTOM_AES_decrypt(buffer_out, buffer_decrypted, &custom_aesKey);
+            if (feof(encrypted_file)){
+                // Le se tem padding
+                resto = buffer_out[0] + 16;
             }
+
             fwrite(buffer_decrypted, 1, bytes_read, decrypted_file);
         }
+
+        // retira padding 
+            // Obtém a posição atual do ponteiro (tamanho do arquivo)
+        long file_size = ftell(decrypted_file);
+
+        // Calcula o novo tamanho do arquivo
+        long new_size = file_size - resto;
+
+        // Ajusta o tamanho do arquivo
+        if (ftruncate(fileno(decrypted_file), new_size) != 0) {
+            perror("Erro ao truncar o arquivo");
+        }
+
         clock_t end = clock();
         custom_decrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
         fclose(encrypted_file);
         fclose(decrypted_file);
         printf("Arquivo descriptografado gerado: decrypted_file.txt\n");
 
+
+
+        // OPENSSL
         FILE *openssl_encrypted = fopen("openssl_encrypted.aes", "rb");
         FILE *openssl_decrypted = fopen("openssl_decrypted.txt", "wb");
         size_t total_read = 0, total_written = 0;
@@ -238,17 +297,29 @@ int main(int argc, char *argv[]) {
             total_read += bytes_read;
 
 
-            size_t blocks = (bytes_read + 15) / 16;
-            for (size_t i = 0; i < blocks; i++) {
-                openssl_decrypt(buffer_out + (i * 16), buffer_decrypted + (i * 16), key);
-            }
-
+                aes_decrypt(buffer_out, buffer_in, key);
             size_t bytes_to_write = bytes_read; // Valide aqui a lógica para blocos
             total_written += bytes_to_write;
 
+            if (feof(openssl_encrypted)){
+                // Le se tem padding
+                resto = buffer_out[0] + 16;
+            }
 
             fwrite(buffer_decrypted, 1, bytes_read, openssl_decrypted);
         }
+        // retira padding 
+        // Obtém a posição atual do ponteiro (tamanho do arquivo)
+        file_size = ftell(openssl_decrypted);
+
+        // Calcula o novo tamanho do arquivo
+        new_size = file_size - resto;
+
+        // Ajusta o tamanho do arquivo
+        if (ftruncate(fileno(openssl_decrypted), new_size) != 0) {
+            perror("Erro ao truncar o arquivo");
+        }
+
         end = clock();
         openssl_decrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
 
