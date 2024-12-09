@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "openssl_crypt.h"
 
 #define BLOCK_SIZE 16
 

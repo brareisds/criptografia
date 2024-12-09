@@ -6,6 +6,7 @@
 #include <time.h>
 #include <omp.h>
 #include <openssl/rand.h>
+#include <unistd.h>
 
 #define BLOCK_SIZE 16
 
@@ -51,6 +52,48 @@ int compare_files(const char *file1, const char *file2) {
     fclose(f2);
     return result;
 }
+
+void encrypt_file(FILE *input_file, FILE *encrypted_file, const void *custom_aesKey) {
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[BLOCK_SIZE];
+    size_t bytes_read;
+    size_t resto;
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
+	// Verifica se é o último bloco e adiciona o padding
+        if (bytes_read < BLOCK_SIZE) {
+            resto = BLOCK_SIZE - bytes_read;
+            memset(buffer_in+bytes_read, 0, resto);
+        }
+        CUSTOM_AES_encrypt(buffer_in, buffer_out, custom_aesKey);
+        fwrite(buffer_out, 1, BLOCK_SIZE, encrypted_file);
+    }
+
+    // Cria um bloco a mais com o tamanho do padding
+    memset(buffer_out, resto, BLOCK_SIZE);
+    fwrite(buffer_out, 1, BLOCK_SIZE, encrypted_file);
+
+    return;
+}
+
+
+void decrypt_file(FILE *encrypted_file, FILE *output_file, const void *custom_aesKey) {
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[BLOCK_SIZE];
+    size_t bytes_read;
+
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, encrypted_file)) > 0) {
+        CUSTOM_AES_decrypt(buffer_in, buffer_out, custom_aesKey);
+        fwrite(buffer_out, 1, BLOCK_SIZE, output_file);
+    }
+
+    int padding = (int)(buffer_in[0]);
+    fseek(output_file, -(BLOCK_SIZE+padding), SEEK_END);
+    ftruncate(fileno(output_file), ftell(output_file));
+
+    return;
+}
+
+
 
 int main(int argc, char *argv[]) {
     // Verifica se o número de argumentos é válido
@@ -168,15 +211,7 @@ int main(int argc, char *argv[]) {
         fseek(input_file, 0, SEEK_SET);
 
         clock_t start = clock();
-        while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
-            size_t blocks = (bytes_read + 15) / 16;
-            #pragma omp parallel for
-            for (size_t i = 0; i < blocks; i++) {
-                CUSTOM_AES_encrypt(buffer_in + (i * 16), buffer_out + (i * 16), &custom_aesKey);
-            }
-            fwrite(buffer_out, 1, bytes_read, encrypted_file);
-        }
-
+        encrypt_file(input_file, encrypted_file, &custom_aesKey);
         clock_t end = clock();
         custom_encrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
         fclose(encrypted_file);
@@ -199,14 +234,7 @@ int main(int argc, char *argv[]) {
         }
 
         clock_t start = clock();
-        while ((bytes_read = fread(buffer_out, 1, BLOCK_SIZE, encrypted_file)) > 0) {
-            size_t blocks = (bytes_read + 15) / 16;
-            #pragma omp parallel for
-            for (size_t i = 0; i < blocks; i++) {
-                CUSTOM_AES_decrypt(buffer_out + (i * 16), buffer_decrypted + (i * 16), &custom_aesKey);
-            }
-            fwrite(buffer_decrypted, 1, bytes_read, decrypted_file);
-        }
+        decrypt_file(encrypted_file, decrypted_file, &custom_aesKey);
 
         clock_t end = clock();
         custom_decrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
