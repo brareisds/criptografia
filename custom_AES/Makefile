@@ -15,4 +15,5 @@ main.o: main.c aes.h
 
 # Limpeza de arquivos temporários
 clean:
-	rm -f *.o aes
+	rm -f *.o aes *.txt *.aes
+	rm -f test_files/*.txt

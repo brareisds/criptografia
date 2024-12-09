@@ -1,72 +1,88 @@
 #include <openssl/aes.h>
 #include <openssl/rand.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include <time.h>
+#include <string.h>
+#include <unistd.h>
+#include "openssl_crypt.h"
 
-#define AES_BLOCK_SIZE 16
+#define BLOCK_SIZE 16
 
-void handleErrors(const char *message) {
-    perror(message);
-    exit(EXIT_FAILURE);
-}
-
-void generate_random_bytes(unsigned char *buffer, size_t size) {
-    if (!RAND_bytes(buffer, size)) {
-        handleErrors("Erro ao gerar bytes aleatórios");
+// Função para aplicar padding PKCS#7
+int apply_pkcs7_padding(unsigned char *buffer, int data_len) {
+    int padding_size = BLOCK_SIZE - (data_len % BLOCK_SIZE);
+    for (int i = data_len; i < data_len + padding_size; i++) {
+        buffer[i] = padding_size;
     }
+    return data_len + padding_size;
 }
 
-void aes_encrypt_file(const char *input_filename, const char *output_filename, unsigned char *key, unsigned char *iv, int key_size) {
+// Função para remover padding PKCS#7
+int remove_pkcs7_padding(unsigned char *buffer, int data_len) {
+    int padding_size = buffer[data_len - 1];
+    if (padding_size < 1 || padding_size > BLOCK_SIZE) {
+        fprintf(stderr, "Erro no padding!\n");
+        exit(1);
+    }
+    return data_len - padding_size;
+}
+
+// Função para criptografar arquivo
+void encrypt_file(const char *input_filename, const char *output_filename, const unsigned char *key) {
     FILE *input_file = fopen(input_filename, "rb");
     FILE *output_file = fopen(output_filename, "wb");
-
     if (!input_file || !output_file) {
-        handleErrors("Erro ao abrir arquivos");
+        perror("Erro ao abrir arquivos");
+        exit(EXIT_FAILURE);
     }
 
-    AES_KEY encrypt_key;
-    AES_set_encrypt_key(key, key_size, &encrypt_key);
+    AES_KEY aes_key;
+    AES_set_encrypt_key(key, 128, &aes_key);
 
-    unsigned char input_buffer[AES_BLOCK_SIZE];
-    unsigned char output_buffer[AES_BLOCK_SIZE];
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[BLOCK_SIZE];
     int bytes_read;
 
-    while ((bytes_read = fread(input_buffer, 1, AES_BLOCK_SIZE, input_file)) > 0) {
-        if (bytes_read < AES_BLOCK_SIZE) {
-            memset(input_buffer + bytes_read, AES_BLOCK_SIZE - bytes_read, AES_BLOCK_SIZE - bytes_read);
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
+        if (bytes_read < BLOCK_SIZE) {
+            int padded_len = apply_pkcs7_padding(buffer_in, bytes_read);
+            AES_encrypt(buffer_in, buffer_out, &aes_key);
+            fwrite(buffer_out, 1, BLOCK_SIZE, output_file);
+            break;
         }
-        AES_cbc_encrypt(input_buffer, output_buffer, AES_BLOCK_SIZE, &encrypt_key, iv, AES_ENCRYPT);
-        fwrite(output_buffer, 1, AES_BLOCK_SIZE, output_file);
+        AES_encrypt(buffer_in, buffer_out, &aes_key);
+        fwrite(buffer_out, 1, BLOCK_SIZE, output_file);
     }
 
     fclose(input_file);
     fclose(output_file);
 }
 
-void aes_decrypt_file(const char *input_filename, const char *output_filename, unsigned char *key, unsigned char *iv, int key_size) {
+// Função para descriptografar arquivo
+void decrypt_file(const char *input_filename, const char *output_filename, const unsigned char *key) {
     FILE *input_file = fopen(input_filename, "rb");
     FILE *output_file = fopen(output_filename, "wb");
-
     if (!input_file || !output_file) {
-        handleErrors("Erro ao abrir arquivos");
+        perror("Erro ao abrir arquivos");
+        exit(EXIT_FAILURE);
     }
 
-    AES_KEY decrypt_key;
-    AES_set_decrypt_key(key, key_size, &decrypt_key);
+    AES_KEY aes_key;
+    AES_set_decrypt_key(key, 128, &aes_key);
 
-    unsigned char input_buffer[AES_BLOCK_SIZE];
-    unsigned char output_buffer[AES_BLOCK_SIZE];
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[BLOCK_SIZE];
     int bytes_read;
 
-    while ((bytes_read = fread(input_buffer, 1, AES_BLOCK_SIZE, input_file)) > 0) {
-        AES_cbc_encrypt(input_buffer, output_buffer, AES_BLOCK_SIZE, &decrypt_key, iv, AES_DECRYPT);
-        if (bytes_read < AES_BLOCK_SIZE) {
-            int padding_length = output_buffer[AES_BLOCK_SIZE - 1];
-            fwrite(output_buffer, 1, AES_BLOCK_SIZE - padding_length, output_file);
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
+        AES_decrypt(buffer_in, buffer_out, &aes_key);
+
+        // Verifica se é o último bloco e remove padding
+        if (feof(input_file)) {
+            int final_len = remove_pkcs7_padding(buffer_out, bytes_read);
+            fwrite(buffer_out, 1, final_len, output_file);
         } else {
-            fwrite(output_buffer, 1, AES_BLOCK_SIZE, output_file);
+            fwrite(buffer_out, 1, BLOCK_SIZE, output_file);
         }
     }
 
@@ -74,23 +90,23 @@ void aes_decrypt_file(const char *input_filename, const char *output_filename, u
     fclose(output_file);
 }
 
+// Função para comparar dois arquivos
 int compare_files(const char *file1, const char *file2) {
     FILE *f1 = fopen(file1, "rb");
     FILE *f2 = fopen(file2, "rb");
-
     if (!f1 || !f2) {
-        handleErrors("Erro ao abrir arquivos para comparação");
+        perror("Erro ao abrir arquivos para comparação");
+        return 0;
     }
 
-    int result = 1; // Assume files are identical
-    unsigned char buffer1[AES_BLOCK_SIZE];
-    unsigned char buffer2[AES_BLOCK_SIZE];
-    size_t bytes_read1, bytes_read2;
+    int result = 1;
+    unsigned char buffer1[BLOCK_SIZE], buffer2[BLOCK_SIZE];
+    size_t bytes1, bytes2;
 
-    while ((bytes_read1 = fread(buffer1, 1, AES_BLOCK_SIZE, f1)) > 0 &&
-           (bytes_read2 = fread(buffer2, 1, AES_BLOCK_SIZE, f2)) > 0) {
-        if (bytes_read1 != bytes_read2 || memcmp(buffer1, buffer2, bytes_read1) != 0) {
-            result = 0; // Files are different
+    while ((bytes1 = fread(buffer1, 1, BLOCK_SIZE, f1)) > 0 &&
+           (bytes2 = fread(buffer2, 1, BLOCK_SIZE, f2)) > 0) {
+        if (bytes1 != bytes2 || memcmp(buffer1, buffer2, bytes1) != 0) {
+            result = 0;
             break;
         }
     }
@@ -101,47 +117,39 @@ int compare_files(const char *file1, const char *file2) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Uso: %s <arquivo_entrada> <tamanho_chave>\n", argv[0]);
-        return EXIT_FAILURE;
+    if (argc != 4) {
+        fprintf(stderr, "Uso: %s <arquivo_entrada> <arquivo_saida> <encrypt/decrypt>\n", argv[0]);
+        return 1;
     }
 
-    const char *input_file = argv[1];
-    const char *openssl_encrypted_file = "openssl_encrypted.aes";
-    const char *openssl_decrypted_file = "openssl_decrypted.txt";
-    int key_size = atoi(argv[2]);
-
-    if (key_size != 128 && key_size != 192 && key_size != 256) {
-        fprintf(stderr, "Tamanho da chave deve ser 128, 192 ou 256 bits\n");
-        return EXIT_FAILURE;
+    unsigned char key[BLOCK_SIZE];
+    if (!RAND_bytes(key, sizeof(key))) {
+        fprintf(stderr, "Erro ao gerar chave.\n");
+        return 1;
     }
 
-    unsigned char key[key_size / 8];
-    unsigned char iv[AES_BLOCK_SIZE];
+    printf("Chave gerada: ");
+    for (int i = 0; i < BLOCK_SIZE; i++) {
+        printf("%02x", key[i]);
+    }
+    printf("\n");
 
-    // Gerar chave e IV aleatórios
-    generate_random_bytes(key, sizeof(key));
-    generate_random_bytes(iv, sizeof(iv));
+    if (strcmp(argv[3], "encrypt") == 0) {
+        encrypt_file(argv[1], "encrypted_file.aes", key);
+        printf("Arquivo criptografado com sucesso.\n");
+    } else if (strcmp(argv[3], "decrypt") == 0) {
+        decrypt_file("encrypted_file.aes", argv[2], key);
+        printf("Arquivo descriptografado com sucesso.\n");
 
-    // Criptografar arquivo
-    clock_t start = clock();
-    aes_encrypt_file(input_file, openssl_encrypted_file, key, iv, key_size);
-    clock_t end = clock();
-    double openssl_encrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-    printf("Tempo de criptografia OpenSSL: %f segundos\n", openssl_encrypt_time);
-
-    // Descriptografar arquivo
-    start = clock();
-    aes_decrypt_file(openssl_encrypted_file, openssl_decrypted_file, key, iv, key_size);
-    end = clock();
-    double openssl_decrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-    printf("Tempo de descriptografia OpenSSL: %f segundos\n", openssl_decrypt_time);
-
-    // Comparar arquivos
-    if (compare_files(input_file, openssl_decrypted_file)) {
-        printf("Os arquivos são idênticos.\n");
+        // Comparação entre o arquivo original e o descriptografado
+        if (compare_files(argv[1], argv[2])) {
+            printf("Sucesso: Arquivo original e descriptografado são idênticos.\n");
+        } else {
+            printf("Erro: Arquivo descriptografado difere do original.\n");
+        }
     } else {
-        printf("Os arquivos são diferentes.\n");
+        fprintf(stderr, "Operação inválida: use 'encrypt' ou 'decrypt'.\n");
+        return 1;
     }
 
     return 0;
