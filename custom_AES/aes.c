@@ -391,10 +391,6 @@ int CUSTOM_AES_set_decrypt_key(const unsigned char *userKey, const int bits, CUS
     return CUSTOM_AES_set_encrypt_key(userKey, bits, key);
 }
 
-/*
- * Encrypt a single block
- * in and out can overlap
- */
 void CUSTOM_AES_encrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
     Cipher(in, out, key);
 }
@@ -403,6 +399,7 @@ void CUSTOM_AES_decrypt(const unsigned char *in, unsigned char *out, const CUSTO
     InvCipher(in, out, key);
 }
 
+// Criptografa um arquivo de entrada usando a openssl
 void openssl_encrypt_file(FILE *input_file, FILE *encrypted_file, unsigned char* key) {
     unsigned char buffer_in[BLOCK_SIZE];
     unsigned char buffer_out[2*BLOCK_SIZE];	//espaço para o padding
@@ -434,6 +431,7 @@ void openssl_encrypt_file(FILE *input_file, FILE *encrypted_file, unsigned char*
     return;
 }
 
+// Descriptografa um arquivo de entrada usando a openssl
 void openssl_decrypt_file(FILE *encrypted_file, FILE *output_file, unsigned char* key) {
     unsigned char buffer_in[BLOCK_SIZE];
     unsigned char buffer_out[2*BLOCK_SIZE];	//espaço para o padding
@@ -462,5 +460,48 @@ void openssl_decrypt_file(FILE *encrypted_file, FILE *output_file, unsigned char
     EVP_cleanup(); 
     CRYPTO_cleanup_all_ex_data(); //Stop data leaks
     ERR_free_strings();
+    return;
+}
+
+// Criptografa um arquivo de entrada usando o método customizado de 16 em 16 bytes
+// adicionando um padding no final do arquivo
+void encrypt_file(FILE *input_file, FILE *encrypted_file, const void *custom_aesKey) {
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[BLOCK_SIZE];
+    size_t bytes_read;
+    size_t resto = 0;
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
+	// Verifica se é o último bloco e adiciona o padding
+        if (bytes_read < BLOCK_SIZE) {
+            resto = BLOCK_SIZE - bytes_read;
+            memset(buffer_in+bytes_read, 0, resto);
+        }
+        CUSTOM_AES_encrypt(buffer_in, buffer_out, custom_aesKey);
+        fwrite(buffer_out, 1, BLOCK_SIZE, encrypted_file);
+    }
+
+    // Cria um bloco a mais com o tamanho do padding
+    memset(buffer_out, resto, BLOCK_SIZE);
+    fwrite(buffer_out, 1, BLOCK_SIZE, encrypted_file);
+
+    return;
+}
+
+// Descriptografa um arquivo de entrada usando o método customizado de 16 em 16 bytes
+// removendo o padding no final do arquivo
+void decrypt_file(FILE *encrypted_file, FILE *output_file, const void *custom_aesKey) {
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[BLOCK_SIZE];
+    size_t bytes_read;
+
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, encrypted_file)) > 0) {
+        CUSTOM_AES_decrypt(buffer_in, buffer_out, custom_aesKey);
+        fwrite(buffer_out, 1, BLOCK_SIZE, output_file);
+    }
+
+    int padding = (int)(buffer_in[0]);
+    fseek(output_file, -(BLOCK_SIZE+padding), SEEK_END);
+    ftruncate(fileno(output_file), ftell(output_file));
+
     return;
 }
