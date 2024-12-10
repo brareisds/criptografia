@@ -1,5 +1,5 @@
-CFLAGS = -Wall -Wextra -fopenmp
-LDFLAGS = -lssl -lcrypto
+CFLAGS = -Wall -Wextra
+LDFLAGS = -lcrypto
 
 # Alvo principal
 aes: aes.o main.o

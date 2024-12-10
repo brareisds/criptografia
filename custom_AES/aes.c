@@ -10,6 +10,7 @@
  */
 
 #include "aes.h"
+#define BLOCK_SIZE 16
 
 static void XtimeWord(u32 *w)
 {
@@ -400,4 +401,66 @@ void CUSTOM_AES_encrypt(const unsigned char *in, unsigned char *out, const CUSTO
 
 void CUSTOM_AES_decrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
     InvCipher(in, out, key);
+}
+
+void openssl_encrypt_file(FILE *input_file, FILE *encrypted_file, unsigned char* key) {
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[2*BLOCK_SIZE];	//espaço para o padding
+    size_t bytes_read;
+    EVP_CIPHER_CTX *ctx;
+    int len = 0;
+
+    ERR_load_crypto_strings();
+    OpenSSL_add_all_algorithms();
+    OPENSSL_config(NULL);
+
+    ctx = EVP_CIPHER_CTX_new();
+
+    EVP_EncryptInit(ctx, EVP_aes_128_ecb(), key, NULL);
+
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
+        EVP_EncryptUpdate(ctx, buffer_out, &len, buffer_in, bytes_read);
+        fwrite(buffer_out, sizeof(unsigned char), len, encrypted_file);
+    }
+
+    EVP_EncryptFinal_ex(ctx, buffer_out, &len);
+    fwrite(buffer_out, sizeof(unsigned char), len, encrypted_file);
+
+    EVP_CIPHER_CTX_cleanup(ctx);
+
+    EVP_cleanup(); 
+    CRYPTO_cleanup_all_ex_data(); //Stop data leaks
+    ERR_free_strings();
+    return;
+}
+
+void openssl_decrypt_file(FILE *encrypted_file, FILE *output_file, unsigned char* key) {
+    unsigned char buffer_in[BLOCK_SIZE];
+    unsigned char buffer_out[2*BLOCK_SIZE];	//espaço para o padding
+    size_t bytes_read;
+    EVP_CIPHER_CTX *ctx;
+    int len = 0;
+
+    ERR_load_crypto_strings();
+    OpenSSL_add_all_algorithms();
+    OPENSSL_config(NULL);
+
+    ctx = EVP_CIPHER_CTX_new();
+
+    EVP_DecryptInit(ctx, EVP_aes_128_ecb(), key, NULL);
+
+    while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, encrypted_file)) > 0) {
+        EVP_DecryptUpdate(ctx, buffer_out, &len, buffer_in, bytes_read);
+        fwrite(buffer_out, sizeof(unsigned char), len, output_file);
+    }
+
+    EVP_DecryptFinal_ex(ctx, buffer_out, &len);
+    fwrite(buffer_out, sizeof(unsigned char), len, output_file);
+
+    EVP_CIPHER_CTX_cleanup(ctx);
+
+    EVP_cleanup(); 
+    CRYPTO_cleanup_all_ex_data(); //Stop data leaks
+    ERR_free_strings();
+    return;
 }

@@ -1,11 +1,8 @@
 #include "aes.h"
-#include <openssl/evp.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <omp.h>
-#include <openssl/rand.h>
 #include <unistd.h>
 
 #define BLOCK_SIZE 16
@@ -53,18 +50,18 @@ int compare_files(const char *file1, const char *file2) {
     return result;
 }
 
-void encrypt_file(FILE *input_file, FILE *encrypted_file, const void *custom_aesKey) {
+void encrypt_file(FILE *input_file, FILE *encrypted_file, const void *custom_aesKey, void (*encrypt)(const unsigned char *, unsigned char *, const void *)) {
     unsigned char buffer_in[BLOCK_SIZE];
     unsigned char buffer_out[BLOCK_SIZE];
     size_t bytes_read;
-    size_t resto;
+    size_t resto = 0;
     while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
 	// Verifica se é o último bloco e adiciona o padding
         if (bytes_read < BLOCK_SIZE) {
             resto = BLOCK_SIZE - bytes_read;
             memset(buffer_in+bytes_read, 0, resto);
         }
-        CUSTOM_AES_encrypt(buffer_in, buffer_out, custom_aesKey);
+        encrypt(buffer_in, buffer_out, custom_aesKey);
         fwrite(buffer_out, 1, BLOCK_SIZE, encrypted_file);
     }
 
@@ -76,13 +73,13 @@ void encrypt_file(FILE *input_file, FILE *encrypted_file, const void *custom_aes
 }
 
 
-void decrypt_file(FILE *encrypted_file, FILE *output_file, const void *custom_aesKey) {
+void decrypt_file(FILE *encrypted_file, FILE *output_file, const void *custom_aesKey, void (*decrypt)(const unsigned char *, unsigned char *, const void *)) {
     unsigned char buffer_in[BLOCK_SIZE];
     unsigned char buffer_out[BLOCK_SIZE];
     size_t bytes_read;
 
     while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, encrypted_file)) > 0) {
-        CUSTOM_AES_decrypt(buffer_in, buffer_out, custom_aesKey);
+        decrypt(buffer_in, buffer_out, custom_aesKey);
         fwrite(buffer_out, 1, BLOCK_SIZE, output_file);
     }
 
@@ -178,99 +175,112 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Aloca buffers para criptografia e descriptografia
-    unsigned char *buffer_in = malloc(BLOCK_SIZE);
-    unsigned char *buffer_out = malloc(BLOCK_SIZE);
-    unsigned char *buffer_decrypted = malloc(BLOCK_SIZE);
-
-    if (!buffer_in || !buffer_out || !buffer_decrypted) {
-        printf("Erro: Falha ao alocar memória.\n");
-        free(buffer_in);
-        free(buffer_out);
-        free(buffer_decrypted);
-        free(key);
-        fclose(input_file);
-        return 1;
-    }
-
-    size_t bytes_read;
-    double custom_encrypt_time = 0, custom_decrypt_time = 0;
+    double custom_encrypt_time = 0, custom_decrypt_time = 0, openssl_encrypt_time = 0, openssl_decrypt_time = 0;
 
     // Realiza a criptografia se necessário
     if (do_encrypt) {
-        FILE *encrypted_file = fopen("encrypted_file.aes", "wb");
-        if (!encrypted_file) {
+        FILE *encrypted_file_custom = fopen("encrypted_file_custom.aes", "wb");
+        FILE *encrypted_file_openssl = fopen("encrypted_file_openssl.aes", "wb");
+
+        if (!encrypted_file_custom || !encrypted_file_openssl) {
             printf("Erro: Não foi possível criar o arquivo criptografado.\n");
-            free(buffer_in);
-            free(buffer_out);
-            free(buffer_decrypted);
             free(key);
             fclose(input_file);
             return 1;
         }
-        fseek(input_file, 0, SEEK_SET);
 
+        fseek(input_file, 0, SEEK_SET);
         clock_t start = clock();
-        encrypt_file(input_file, encrypted_file, &custom_aesKey);
+        encrypt_file(input_file, encrypted_file_custom, &custom_aesKey, &CUSTOM_AES_encrypt);
         clock_t end = clock();
         custom_encrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-        fclose(encrypted_file);
-        printf("Arquivo criptografado gerado: encrypted_file.aes\n");
+        printf("Arquivo criptografado: encrypted_file_custom.aes\n");
+        fclose(encrypted_file_custom);
+
+
+        // OPENSSL
+	fseek(input_file, 0, SEEK_SET);
+	start = clock();
+	openssl_encrypt_file(input_file, encrypted_file_openssl, key);
+	end = clock();
+	openssl_encrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+	printf("Arquivo criptografado: encrypted_file_openssl.aes\n");
+	fclose(encrypted_file_openssl);
     }
 
     // Realiza a descriptografia se necessário
     if (do_decrypt) {
-        FILE *encrypted_file = fopen("encrypted_file.aes", "rb");
-        FILE *decrypted_file = fopen("decrypted_file.txt", "wb");
+        FILE *encrypted_file_custom = fopen("encrypted_file_custom.aes", "rb");
+        FILE *decrypted_file_custom = fopen("decrypted_file_custom.txt", "wb");
 
-        if (!encrypted_file || !decrypted_file) {
+	FILE *encrypted_file_openssl = fopen("encrypted_file_openssl.aes", "rb");
+	FILE *decrypted_file_openssl = fopen("decrypted_file_openssl.txt", "wb");
+
+        if (!encrypted_file_custom || !decrypted_file_custom || !encrypted_file_openssl || !decrypted_file_openssl) {
             printf("Erro: Não foi possível abrir arquivos para descriptografia.\n");
-            free(buffer_in);
-            free(buffer_out);
-            free(buffer_decrypted);
             free(key);
             fclose(input_file);
             return 1;
         }
 
         clock_t start = clock();
-        decrypt_file(encrypted_file, decrypted_file, &custom_aesKey);
-
+        decrypt_file(encrypted_file_custom, decrypted_file_custom, &custom_aesKey, &CUSTOM_AES_decrypt);
         clock_t end = clock();
         custom_decrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-        fclose(encrypted_file);
-        fclose(decrypted_file);
-        printf("Arquivo descriptografado gerado: decrypted_file.txt\n");
+	printf("Arquivo descriptografado: decrypted_file_custom.txt\n");
+
+	// OPENSSL
+	start = clock();
+	openssl_decrypt_file(encrypted_file_openssl, decrypted_file_openssl, key);
+	end = clock();
+	openssl_decrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+	printf("Arquivo descriptografado: decrypted_file_openssl.txt\n");
+
+        fclose(encrypted_file_custom);
+        fclose(decrypted_file_custom);
+	fclose(encrypted_file_openssl);
+	fclose(decrypted_file_openssl);
     }
 
     // Comparação detalhada dos bytes (Custom AES e OpenSSL)
     printf("\n==== Comparação de Bytes (Depuração) ====\n");
     printf("Comparando arquivo original com descriptografado (Custom AES):\n");
-    compare_file_bytes(argv[1], "decrypted_file.txt", 64); // Compara os primeiros 64 bytes
+    compare_file_bytes(argv[1], "decrypted_file_custom.txt", 64); // Compara os primeiros 64 bytes
+    printf("\nComparando arquivo original com descriptografado (OpenSSL):\n");
+    compare_file_bytes(argv[1], "decrypted_file_openssl.txt", 64); // Compara os primeiros 64 bytes
+
 
     // Exibir tempos de execução
     printf("\n==== Tempos de Execução ====\n");
     printf("Custom AES Encrypt: %.6f segundos\n", custom_encrypt_time);
     printf("Custom AES Decrypt: %.6f segundos\n", custom_decrypt_time);
+    printf("OpenSSL Encrypt: %.6f segundos\n", openssl_encrypt_time);
+    printf("OpenSSL Decrypt: %.6f segundos\n", openssl_decrypt_time);
+
 
     // Comparação final: verifica se a criptografia foi bem sucedida
     if (do_decrypt) {
-        int custom_success = compare_files(argv[1], "decrypted_file.txt");
+        int custom_success = compare_files(argv[1], "decrypted_file_custom.txt");
+	int openssl_success = compare_files(argv[1], "decrypted_file_openssl.txt");
 
         printf("\n==== Resultados das Comparações ====\n");
         printf("Custom AES: %s\n", custom_success ? "Sucesso (arquivos idênticos)" : "Erro (arquivos diferentes)");
+	printf("OpenSSL: %s\n", openssl_success ? "Sucesso (arquivos idênticos)" : "Erro (arquivos diferentes)");
 
         if (custom_success) {
             printf("\nA criptografia foi bem-sucedida.\n");
         } else {
             printf("\nA criptografia falhou.\n");
         }
+
+	if (openssl_success) {
+	    printf("\nA criptografia foi bem-sucedida.\n");
+	} else {
+	    printf("\nA criptografia falhou.\n");
+	}
     }
 
     // Libera memória alocada e fecha arquivos
-    free(buffer_in);
-    free(buffer_out);
-    free(buffer_decrypted);
     free(key);
     fclose(input_file);
 
