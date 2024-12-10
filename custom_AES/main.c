@@ -199,13 +199,6 @@ int main(int argc, char *argv[]) {
         fclose(decrypted_file_openssl);
     }
 
-    // Comparação detalhada dos bytes (Custom AES e OpenSSL)
-    printf("\n==== Comparação de Bytes (Depuração) ====\n");
-    printf("Comparando arquivo original com descriptografado (Custom AES):\n");
-    compare_file_bytes(argv[1], "decrypted_file_custom.txt", 64); // Compara os primeiros 64 bytes
-    printf("\nComparando arquivo original com descriptografado (OpenSSL):\n");
-    compare_file_bytes(argv[1], "decrypted_file_openssl.txt", 64); // Compara os primeiros 64 bytes
-
 
     // Exibir tempos de execução
     printf("\n==== Tempos de Execução ====\n");
@@ -217,6 +210,13 @@ int main(int argc, char *argv[]) {
 
     // Comparação final: verifica se a criptografia foi bem sucedida
     if (do_decrypt) {
+	// Comparação detalhada dos bytes (Custom AES e OpenSSL)
+	printf("\n==== Comparação de Bytes (Depuração) ====\n");
+	printf("Comparando arquivo original com descriptografado (Custom AES):\n");
+	compare_file_bytes(argv[1], "decrypted_file_custom.txt", 64); // Compara os primeiros 64 bytes
+	printf("\nComparando arquivo original com descriptografado (OpenSSL):\n");
+	compare_file_bytes(argv[1], "decrypted_file_openssl.txt", 64); // Compara os primeiros 64 bytes
+    
         int custom_success = compare_files(argv[1], "decrypted_file_custom.txt");
 	int openssl_success = compare_files(argv[1], "decrypted_file_openssl.txt");
 
