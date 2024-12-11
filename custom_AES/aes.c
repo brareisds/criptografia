@@ -263,54 +263,178 @@ static void AddRoundKey(u64 *state, const u64 *w)
     state[1] ^= w[1];
 }
 
-
-static void Cipher(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+// Funcao utilizada para cifrar, retorna o tempo das operacoes
+static OperationTimes Cipher(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
     u64 state[2];
     int i;
+    clock_t start, end;
+    double cpu_time_used;
+    OperationTimes times = {0};
 
     memcpy(state, in, 16);
 
+    // Medir tempo de AddRoundKey inicial
+    start = clock();
     AddRoundKey(state, key->rd_key);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.add_round_key += cpu_time_used;
 
     for (i = 1; i < key->rounds; i++) {
+        // Medir tempo de SubLong para state[0]
+        start = clock();
         SubLong(&state[0], key);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.sub_long_0 += cpu_time_used;
+
+        // Medir tempo de SubLong para state[1]
+        start = clock();
         SubLong(&state[1], key);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.sub_long_1 += cpu_time_used;
+
+        // Medir tempo de ShiftRows
+        start = clock();
         ShiftRows(state);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.shift_rows += cpu_time_used;
+
+        // Medir tempo de MixColumns
+        start = clock();
         MixColumns(state);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.mix_columns += cpu_time_used;
+
+        // Medir tempo de AddRoundKey
+        start = clock();
         AddRoundKey(state, key->rd_key + i * 2);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.add_round_key += cpu_time_used;
     }
 
+    // Medir tempo de SubLong para state[0] final
+    start = clock();
     SubLong(&state[0], key);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.sub_long_0 += cpu_time_used;
+
+    // Medir tempo de SubLong para state[1] final
+    start = clock();
     SubLong(&state[1], key);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.sub_long_1 += cpu_time_used;
+
+    // Medir tempo de ShiftRows final
+    start = clock();
     ShiftRows(state);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.shift_rows += cpu_time_used;
+
+    // Medir tempo de AddRoundKey final
+    start = clock();
     AddRoundKey(state, key->rd_key + key->rounds * 2);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.add_round_key += cpu_time_used;
 
     memcpy(out, state, 16);
+    return times;
 }
 
-static void InvCipher(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+// Funcao utilizada para decifrar, retorna o tempo das operacoes
+static OperationTimes InvCipher(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
     u64 state[2];
     int i;
+    clock_t start, end;
+    double cpu_time_used;
+    OperationTimes times = {0};
 
     memcpy(state, in, 16);
 
+    // Medir tempo de AddRoundKey inicial
+    start = clock();
     AddRoundKey(state, key->rd_key + key->rounds * 2);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.add_round_key += cpu_time_used;
 
     for (i = key->rounds - 1; i > 0; i--) {
+        // Medir tempo de InvShiftRows
+        start = clock();
         InvShiftRows(state);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.shift_rows += cpu_time_used;
+
+        // Medir tempo de InvSubLong para state[0]
+        start = clock();
         InvSubLong(&state[0], key);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.sub_long_0 += cpu_time_used;
+
+        // Medir tempo de InvSubLong para state[1]
+        start = clock();
         InvSubLong(&state[1], key);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.sub_long_1 += cpu_time_used;
+
+        // Medir tempo de AddRoundKey
+        start = clock();
         AddRoundKey(state, key->rd_key + i * 2);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.add_round_key += cpu_time_used;
+
+        // Medir tempo de InvMixColumns
+        start = clock();
         InvMixColumns(state);
+        end = clock();
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+        times.mix_columns += cpu_time_used;
     }
 
+    // Medir tempo de InvShiftRows final
+    start = clock();
     InvShiftRows(state);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.shift_rows += cpu_time_used;
+
+    // Medir tempo de InvSubLong para state[0] final
+    start = clock();
     InvSubLong(&state[0], key);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.sub_long_0 += cpu_time_used;
+
+    // Medir tempo de InvSubLong para state[1] final
+    start = clock();
     InvSubLong(&state[1], key);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.sub_long_1 += cpu_time_used;
+
+    // Medir tempo de AddRoundKey final
+    start = clock();
     AddRoundKey(state, key->rd_key);
+    end = clock();
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+    times.add_round_key += cpu_time_used;
 
     memcpy(out, state, 16);
+    return times;
 }
+
 
 static void RotWord(u32 *x)
 {
@@ -391,17 +515,14 @@ int CUSTOM_AES_set_decrypt_key(const unsigned char *userKey, const int bits, CUS
     return CUSTOM_AES_set_encrypt_key(userKey, bits, key);
 }
 
-void CUSTOM_AES_encrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
-    Cipher(in, out, key);
+OperationTimes CUSTOM_AES_encrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+   return Cipher(in, out, key);
 }
 
-void CUSTOM_AES_decrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
-    InvCipher(in, out, key);
+OperationTimes CUSTOM_AES_decrypt(const unsigned char *in, unsigned char *out, const CUSTOM_AES_KEY *key) {
+    return InvCipher(in, out, key);
 }
 
-
-/* ------------------------------------------------------------------------------------------
-* Funcoes usadas para criptografar e descriptograr os aquivos usando o AES    */
 
 
 // Criptografa um arquivo de entrada usando a openssl
@@ -477,19 +598,40 @@ void encrypt_file(FILE *input_file, FILE *encrypted_file, const void *custom_aes
     unsigned char buffer_out[BLOCK_SIZE];
     size_t bytes_read;
     size_t resto = 0;
+    OperationTimes total_times = {0};
+
     while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, input_file)) > 0) {
 	// Verifica se é o último bloco e adiciona o padding
         if (bytes_read < BLOCK_SIZE) {
             resto = BLOCK_SIZE - bytes_read;
             memset(buffer_in+bytes_read, 0, resto);
         }
-        CUSTOM_AES_encrypt(buffer_in, buffer_out, custom_aesKey);
+        
+        // Criptografa o bloco e obtém os tempos das operações
+        OperationTimes block_times = CUSTOM_AES_encrypt(buffer_in, buffer_out, custom_aesKey);
+        
+        // Acumula os tempos das operações para todos os blocos
+        total_times.sub_long_0 += block_times.sub_long_0;
+        total_times.sub_long_1 += block_times.sub_long_1;
+        total_times.shift_rows += block_times.shift_rows;
+        total_times.mix_columns += block_times.mix_columns;
+        total_times.add_round_key += block_times.add_round_key;
+
         fwrite(buffer_out, 1, BLOCK_SIZE, encrypted_file);
     }
 
     // Cria um bloco a mais com o tamanho do padding
     memset(buffer_out, resto, BLOCK_SIZE);
     fwrite(buffer_out, 1, BLOCK_SIZE, encrypted_file);
+
+    printf("\n==== Tempo Total das operações para criptografar ====\n");
+    printf("AddRoundKey: %f seconds\n", total_times.add_round_key);
+    printf("SubLong[0]: %f seconds\n", total_times.sub_long_0);
+    printf("SubLong[1]: %f seconds\n", total_times.sub_long_1);
+    printf("ShiftRows: %f seconds\n", total_times.shift_rows);
+    printf("MixColumns: %f seconds\n", total_times.mix_columns);
+    printf("======================================================\n");
+    printf("\n");
 
     return;
 }
@@ -500,15 +642,35 @@ void decrypt_file(FILE *encrypted_file, FILE *output_file, const void *custom_ae
     unsigned char buffer_in[BLOCK_SIZE];
     unsigned char buffer_out[BLOCK_SIZE];
     size_t bytes_read;
+    OperationTimes total_times = {0};
 
     while ((bytes_read = fread(buffer_in, 1, BLOCK_SIZE, encrypted_file)) > 0) {
-        CUSTOM_AES_decrypt(buffer_in, buffer_out, custom_aesKey);
+        
+        // Descriptografa o bloco e obtém os tempos das operações
+        OperationTimes block_times = CUSTOM_AES_decrypt(buffer_in, buffer_out, custom_aesKey);
+
+        // Acumula os tempos das operações para todos os blocos
+        total_times.sub_long_0 += block_times.sub_long_0;
+        total_times.sub_long_1 += block_times.sub_long_1;
+        total_times.shift_rows += block_times.shift_rows;
+        total_times.mix_columns += block_times.mix_columns;
+        total_times.add_round_key += block_times.add_round_key;
+
         fwrite(buffer_out, 1, BLOCK_SIZE, output_file);
     }
 
     int padding = (int)(buffer_in[0]);
     fseek(output_file, -(BLOCK_SIZE+padding), SEEK_END);
     ftruncate(fileno(output_file), ftell(output_file));
+
+    printf("\n==== Tempo Total das operações para descriptografar ====\n");
+    printf("AddRoundKey: %f seconds\n", total_times.add_round_key);
+    printf("SubLong[0]: %f seconds\n", total_times.sub_long_0);
+    printf("SubLong[1]: %f seconds\n", total_times.sub_long_1);
+    printf("ShiftRows: %f seconds\n", total_times.shift_rows);
+    printf("MixColumns: %f seconds\n", total_times.mix_columns);
+    printf("==========================================================\n");
+    printf("\n");
 
     return;
 }

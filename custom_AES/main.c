@@ -1,4 +1,7 @@
-/* Autoras: Barbara Reis dos Santos e Luize Cunha Duarte */
+/* Autoras:
+* Barbara Reis dos Santos - 20222538
+* Luize Cunha Duarte - 20221232
+*/
 
 #include "aes.h"
 #include <string.h>
@@ -147,12 +150,23 @@ int main(int argc, char *argv[]) {
 
     // Configura a chave para criptografia
     CUSTOM_AES_KEY custom_aesKey;
-    if (CUSTOM_AES_set_encrypt_key(key, key_bits, &custom_aesKey) != 0) {
+    clock_t start, end;
+    double encrypt_key_time;
+
+    // Medir o tempo de execução de CUSTOM_AES_set_encrypt_key
+    start = clock();
+    int result = CUSTOM_AES_set_encrypt_key(key, key_bits, &custom_aesKey);
+    end = clock();
+    encrypt_key_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+    if (result != 0) {
         printf("Erro ao configurar a chave.\n");
         free(key);
         fclose(input_file);
         return 1;
     }
+
+    printf("Tempo para configurar a chave: %f segundos\n\n", encrypt_key_time);
 
    
     double custom_encrypt_time = 0, custom_decrypt_time = 0, openssl_encrypt_time = 0, openssl_decrypt_time = 0;
@@ -171,9 +185,9 @@ int main(int argc, char *argv[]) {
 
         // Criptografa com AES customizado 
         fseek(input_file, 0, SEEK_SET);
-        clock_t start = clock();
+        start = clock();
         encrypt_file(input_file, encrypted_file_custom, &custom_aesKey);
-        clock_t end = clock();
+        end = clock();
         custom_encrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("Arquivo criptografado: encrypted_file_custom.aes\n");
         fclose(encrypted_file_custom);
@@ -226,7 +240,7 @@ int main(int argc, char *argv[]) {
 
 
     // Exibe tempos de execução
-    printf("\n==== Tempos de Execução ====\n");
+    printf("\n==== Tempo Total de Execução ====\n");
     printf("Custom AES Encrypt: %.6f segundos\n", custom_encrypt_time);
     printf("Custom AES Decrypt: %.6f segundos\n", custom_decrypt_time);
     printf("OpenSSL Encrypt: %.6f segundos\n", openssl_encrypt_time);
@@ -234,7 +248,7 @@ int main(int argc, char *argv[]) {
 
 
     // Caminho para o arquivo original para comparacao
-    char arquivo_original[] = "test_files/test_1000KB.txt";
+    char arquivo_original[] = "test_files/adicionar_arquivo";
 
     // Comparação final: verifica se a criptografia foi bem sucedida
     if (do_decrypt) {
