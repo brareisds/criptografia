@@ -1,3 +1,5 @@
+/* Autoras: Barbara Reis dos Santos e Luize Cunha Duarte */
+
 #include "aes.h"
 #include <string.h>
 #include <stdio.h>
@@ -10,17 +12,36 @@
 void compare_file_bytes(const char *file1, const char *file2, size_t n) {
     FILE *f1 = fopen(file1, "rb");
     FILE *f2 = fopen(file2, "rb");
+
+    if (!f1 || !f2) {
+        printf("Erro ao abrir arquivos.\n");
+        return;
+    }
+
+    // Declara arrays para armazenar os bytes lidos dos arquivos
     unsigned char b1[n], b2[n];
-    fread(b1, 1, n, f1);
-    fread(b2, 1, n, f2);
+    // Lê n bytes do primeiro arquivo e armazena em b1
+    size_t r1 = fread(b1, 1, n, f1);
+    // Lê n bytes do segundo arquivo e armazena em b2
+    size_t r2 = fread(b2, 1, n, f2);
+
     fclose(f1);
     fclose(f2);
-    for (size_t i = 0; i < n; i++) {
+
+    if (r1 != r2) {
+        printf("Os arquivos têm tamanhos diferentes: %zu != %zu\n", r1, r2);
+        return;
+    }
+
+    for (size_t i = 0; i < r1; i++) {
         if (b1[i] != b2[i]) {
             printf("Byte %zu: %02x != %02x\n", i, b1[i], b2[i]);
         }
     }
+
+    printf("Comparação concluída.\n");
 }
+
 
 // Função para comparar dois arquivos byte a byte
 int compare_files(const char *file1, const char *file2) {
@@ -88,7 +109,7 @@ int main(int argc, char *argv[]) {
     int key_bytes = key_bits / 8;
     if (do_decrypt && strcmp(operation, "decrypt") == 0) {
         if (argc < 5) {
-            printf("Erro: A operação 'decrypt' requer a chave em formato hexadecimal como argumento.\n");
+            printf("Erro: A operação 'decrypt' requer a chave utilizada para criptografar como argumento.\n");
             fclose(input_file);
             return 1;
         }
@@ -109,6 +130,7 @@ int main(int argc, char *argv[]) {
         }
 
     } else if (do_encrypt || strcmp(operation, "both") == 0) {
+        // Gera uma chave aleatoria para descriptografar
         key = malloc(key_bytes);
         if (!key || RAND_bytes(key, key_bytes) != 1) {
             printf("Erro: Falha ao gerar chave aleatória.\n");
@@ -132,6 +154,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+   
     double custom_encrypt_time = 0, custom_decrypt_time = 0, openssl_encrypt_time = 0, openssl_decrypt_time = 0;
 
     // Realiza a criptografia se necessário
@@ -146,6 +169,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
+        // Criptografa com AES customizado 
         fseek(input_file, 0, SEEK_SET);
         clock_t start = clock();
         encrypt_file(input_file, encrypted_file_custom, &custom_aesKey);
@@ -155,7 +179,7 @@ int main(int argc, char *argv[]) {
         fclose(encrypted_file_custom);
 
 
-        // OPENSSL
+        // Criptografa com OpenSSL 
         fseek(input_file, 0, SEEK_SET);
         start = clock();
         openssl_encrypt_file(input_file, encrypted_file_openssl, key);
@@ -180,13 +204,14 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
+        // Descriptografa com AES customizado
         clock_t start = clock();
         decrypt_file(encrypted_file_custom, decrypted_file_custom, &custom_aesKey);
         clock_t end = clock();
         custom_decrypt_time = ((double)(end - start)) / CLOCKS_PER_SEC;
         printf("Arquivo descriptografado: decrypted_file_custom.txt\n");
 
-        // OPENSSL
+        // Descriptografa com OpenSSL 
         start = clock();
         openssl_decrypt_file(encrypted_file_openssl, decrypted_file_openssl, key);
         end = clock();
@@ -200,7 +225,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-    // Exibir tempos de execução
+    // Exibe tempos de execução
     printf("\n==== Tempos de Execução ====\n");
     printf("Custom AES Encrypt: %.6f segundos\n", custom_encrypt_time);
     printf("Custom AES Decrypt: %.6f segundos\n", custom_decrypt_time);
@@ -208,32 +233,32 @@ int main(int argc, char *argv[]) {
     printf("OpenSSL Decrypt: %.6f segundos\n", openssl_decrypt_time);
 
 
+    // Caminho para o arquivo original para comparacao
+    char arquivo_original[] = "test_files/test_1000KB.txt";
+
     // Comparação final: verifica se a criptografia foi bem sucedida
     if (do_decrypt) {
-	// Comparação detalhada dos bytes (Custom AES e OpenSSL)
-	printf("\n==== Comparação de Bytes (Depuração) ====\n");
-	printf("Comparando arquivo original com descriptografado (Custom AES):\n");
-	compare_file_bytes(argv[1], "decrypted_file_custom.txt", 64); // Compara os primeiros 64 bytes
-	printf("\nComparando arquivo original com descriptografado (OpenSSL):\n");
-	compare_file_bytes(argv[1], "decrypted_file_openssl.txt", 64); // Compara os primeiros 64 bytes
-    
-        int custom_success = compare_files(argv[1], "decrypted_file_custom.txt");
-	int openssl_success = compare_files(argv[1], "decrypted_file_openssl.txt");
+        // Comparação detalhada dos bytes (Custom AES e OpenSSL)
+        printf("\n==== Comparação de Bytes (Depuração) ====\n");
+        printf("Comparando %s com descriptografado (Custom AES):\n", arquivo_original);
+        compare_file_bytes(arquivo_original, "decrypted_file_custom.txt", 64); // Compara os primeiros 64 bytes
+        printf("\nComparando %s com descriptografado (OpenSSL):\n", arquivo_original);
+        compare_file_bytes(arquivo_original, "decrypted_file_openssl.txt", 64); // Compara os primeiros 64 bytes
+        
+        int custom_success = compare_files(arquivo_original, "decrypted_file_custom.txt");
+        int openssl_success = compare_files(arquivo_original, "decrypted_file_openssl.txt");
 
         printf("\n==== Resultados das Comparações ====\n");
-        printf("Custom AES: %s\n", custom_success ? "Sucesso (arquivos idênticos)" : "Erro (arquivos diferentes)");
-	    printf("OpenSSL: %s\n", openssl_success ? "Sucesso (arquivos idênticos)" : "Erro (arquivos diferentes)");
-
         if (custom_success) {
-            printf("\nA criptografia foi bem-sucedida.\n");
+            printf("Custom AES: A criptografia foi bem-sucedida.\n");
         } else {
-            printf("\nA criptografia falhou.\n");
+            printf("Custom AES: A criptografia falhou.\n");
         }
 
         if (openssl_success) {
-            printf("\nA criptografia foi bem-sucedida.\n");
+            printf("OpenSSL: A criptografia foi bem-sucedida.\n");
         } else {
-            printf("\nA criptografia falhou.\n");
+            printf("OpenSSL: A criptografia falhou.\n");
         }
     }
 

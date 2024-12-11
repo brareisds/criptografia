@@ -2,9 +2,9 @@
 #define AES_H_CUSTOM
 
 #include <stdint.h>  // Para os tipos u32, u64
-#include <string.h>  // Para memcpy
-#include <assert.h>  // Para assert
-#include <stddef.h>  // Para size_t, se necessário
+#include <string.h>  
+#include <assert.h>  
+#include <stddef.h> 
 #include <stdio.h>
 #include <stdlib.h>
 #include <openssl/conf.h>

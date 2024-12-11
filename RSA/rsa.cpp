@@ -1,3 +1,4 @@
+/* Autoras: Barbara Reis dos Santos e Luize Cunha Duarte */
 #include <bits/stdc++.h>
 using namespace std;
 using ll = long long;

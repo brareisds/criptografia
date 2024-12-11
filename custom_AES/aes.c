@@ -130,8 +130,8 @@ static void SubWord(u32 *w)
 }
 
 
-/* -------------------------------------------------
-* Funcoes alteradas para substituir a Caixa-S    */
+/* ------------------------------------------------------------- */
+// Funcoes alteradas para substituir a Caixa-S 
 
 static unsigned char PRNG(u64 seed, int offset) {
     seed ^= seed >> (offset + 3);
@@ -149,10 +149,10 @@ static void SubLong(u64 *w, const CUSTOM_AES_KEY *key) {
 static void InvSubLong(u64 *w, const CUSTOM_AES_KEY *key) {
     u64 random = PRNG(key->seed, 0);  // Gera um valor pseudoaleatório uma vez usando a chave derivada da chave
     *w = (*w - random) & 0xFFFFFFFFFFFFFFFF;  // Subtração modular em 64 bits
-    *w ^= random;                    // Reverte XOR
+    *w ^= random; // Reverte XOR
 }
 
-/* ------------------------------------------------ */
+/* --------------------------------------------------------------- */
 
 
 static void ShiftRows(u64 *state)
@@ -399,6 +399,11 @@ void CUSTOM_AES_decrypt(const unsigned char *in, unsigned char *out, const CUSTO
     InvCipher(in, out, key);
 }
 
+
+/* ------------------------------------------------------------------------------------------
+* Funcoes usadas para criptografar e descriptograr os aquivos usando o AES    */
+
+
 // Criptografa um arquivo de entrada usando a openssl
 void openssl_encrypt_file(FILE *input_file, FILE *encrypted_file, unsigned char* key) {
     unsigned char buffer_in[BLOCK_SIZE];
@@ -423,10 +428,11 @@ void openssl_encrypt_file(FILE *input_file, FILE *encrypted_file, unsigned char*
     EVP_EncryptFinal_ex(ctx, buffer_out, &len);
     fwrite(buffer_out, sizeof(unsigned char), len, encrypted_file);
 
-    EVP_CIPHER_CTX_cleanup(ctx);
+    // Libera o contexto de cifra
+    EVP_CIPHER_CTX_free(ctx);
 
     EVP_cleanup(); 
-    CRYPTO_cleanup_all_ex_data(); //Stop data leaks
+    CRYPTO_cleanup_all_ex_data(); 
     ERR_free_strings();
     return;
 }
@@ -455,10 +461,11 @@ void openssl_decrypt_file(FILE *encrypted_file, FILE *output_file, unsigned char
     EVP_DecryptFinal_ex(ctx, buffer_out, &len);
     fwrite(buffer_out, sizeof(unsigned char), len, output_file);
 
-    EVP_CIPHER_CTX_cleanup(ctx);
+     // Libera o contexto de cifra
+    EVP_CIPHER_CTX_free(ctx);
 
     EVP_cleanup(); 
-    CRYPTO_cleanup_all_ex_data(); //Stop data leaks
+    CRYPTO_cleanup_all_ex_data(); 
     ERR_free_strings();
     return;
 }
